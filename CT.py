@@ -40,26 +40,27 @@ def compute_fourier_slice(P):
     
     return S
 
-def compute_filtered_projection(S, delta=0.5, kernel="none", **kwargs):
+def compute_filtered_projection(S, delta=0.5, kernel="ramp", **kwargs):
     # Jacobian
     _, len_S = S.shape
     w_abs = np.abs(np.fft.fftfreq(len_S, d=delta))
     
     # kernel
     H = None
-    if kernel == "none":
-        H = np.ones_like(w_abs)
-    elif kernel == "ramp":
+    if kernel == "ramp":
+        H = w_abs
+    elif kernel == "rect":
         cut_off = kwargs["cut_off"]
-        H = np.where(w_abs <= cut_off, 1, 0)
-    elif kernel == "gaussian":
+        H = np.where(w_abs <= cut_off, w_abs, 0)
+    elif kernel == "exp":
         sigma = kwargs["sigma"]
-        H = np.exp(-0.5 * w_abs ** 2 / sigma ** 2)
+        M = np.exp(-0.5 * w_abs ** 2 / sigma ** 2)
+        H = w_abs * M
     else:
-        raise ValueError("parameter 'kernel' should be one of 'none', 'ramp', 'gaussian'")
+        raise ValueError("parameter 'kernel' should be one of 'ramp', 'rect', 'exp'")
     
     # Multiple filter
-    S_ = S * w_abs * H
+    S_ = S * H
     
     # Filtered projection
     Q = np.fft.ifft(S_, axis=1)
@@ -114,7 +115,7 @@ if __name__ == "__main__":
     num_thetas = 360
     delta = 0.5
     # Kernel
-    kernel = "ramp"
+    kernel = "rect"
     cut_off = 0.5
     
     ## init
