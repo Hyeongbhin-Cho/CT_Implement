@@ -5,8 +5,15 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-def save_img(img, name, save_dir="./"):
-    img = np.clip(img, 0, 1)
+def save_img(img, name, save_dir="./", type="clip"):
+    if type == "clip":
+        img = np.clip(img, 0, 1)
+    elif type == "min-max":
+        min = img.min()
+        max = img.max()
+        img = (img - min) / max
+    else:
+        raise ValueError("type must be one of 'clip', 'min-max'.")
     img = (img * 255).astype(np.uint8)
     cv2.imwrite(os.path.join(save_dir, f"{name}.png"), img)
 
@@ -28,6 +35,16 @@ def compute_projection(source, x, y, thetas, ts):
             P[i, j] = np.sum(source * ray, axis=(0, 1), keepdims=False) 
             
     return P
+
+def apply_detector_let(P, let_size):
+    pre_pad = (let_size - 1) // 2
+    post_pad = let_size // 2
+    
+    P = np.pad(P, ((pre_pad, post_pad), (0, 0)), mode="wrap")
+    kernel = np.ones(let_size) / let_size
+    
+    return np.apply_along_axis(lambda x: np.convolve(x, kernel, mode="valid"), axis=0, arr=P)
+
 
 def compute_fourier_slice(P):
     _, num_ts = P.shape
@@ -114,6 +131,7 @@ if __name__ == "__main__":
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
     delta = 0.5
+    let_size = 3
     # Kernel
     kernel = "rect"
     cut_off = 0.5
@@ -128,7 +146,7 @@ if __name__ == "__main__":
     # W = 1 (1/pixel) -> delta = 1 / 2W = 0.5
     # Nyquist frequecy is 0.5 (1/pixel). But ,for better quality, it oversamples
     ts =  np.arange(-D/2, D/2 + delta, delta)
-    
+
     # Grid: (x, y)
     R_x = np.linspace(-width//2, width//2 , width)
     R_y = np.linspace(-height//2, height//2, height)
@@ -140,12 +158,20 @@ if __name__ == "__main__":
     
     ## 2.Projection of source: P_theta(t)
     P = compute_projection(source, x, y, thetas, ts)
+    print(f"P shape: {P.shape}")
+    save_img(P, "projection", type="min-max")
+    
+    # Apply detector let
+    P = apply_detector_let(P, let_size)
+    save_img(P, "projection__detector_lets", type="min-max")
     
     ## 3. Fourier slice: S_theta(w)
     S = compute_fourier_slice(P)
+    print(f"S shape: {S.shape}")
     
     ## 4. Filtered projection: Q_theta(t)
     Q = compute_filtered_projection(S, delta=delta, kernel=kernel , cut_off=cut_off)
+    print(f"Q shape: {Q.shape}")
     
     # 5. Reconstruction
     recon = reconstruct_source(Q[:180], x, y, thetas[:180], t_min=-D/2, delta=delta)
