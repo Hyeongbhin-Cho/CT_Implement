@@ -258,7 +258,7 @@ if __name__ == "__main__":
     Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, kernel_args=kernel_args)
     Q = Q[:, :kernel_args["num_detectors"]] # Truncate pad
     print(f"Q shape: {Q.shape}")
-    save_img(Q, "filtered_projection", type="abs")
+    save_img(np.clip(Q, P.min(), P.max()), "filtered_projection", type="min-max")
     
     # 5. Reconstruction
     angle = 180
