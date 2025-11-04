@@ -189,15 +189,16 @@ def compute_convolution_projection(P, delta_t=0.5):
     
     return Q * delta_t
     
-def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5):
+def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False):
     H, W = x.shape
     len_t = Q.shape[1]
     sum_q = np.zeros((H, W))
+    t_shift = delta_t / 4 if quarter_offset else 0
     
     for q, theta in zip(Q, thetas):
         t = np.cos(theta) * x + np.sin(theta) * y
         
-        idx_float = (t - t_min) / delta_t
+        idx_float = (t - t_min - t_shift) / delta_t
         
         for i in range(H):
             for j in range(W):
@@ -259,7 +260,7 @@ if __name__ == "__main__":
     
     # Hyperparameter
     height, width = (128, 128)
-    center = (30, -40)
+    center = (30, 40)
     A, B = (20, 15)
     coefficient = 1
     range_angle = (0, 2 * np.pi)
@@ -267,7 +268,7 @@ if __name__ == "__main__":
     delta_t = 0.5
     delta_l = 0.5
     let_size = 5
-    quarter_offset = True
+    quarter_offset = False
     # Kernel
     kernel = "ramp"
     
@@ -328,11 +329,11 @@ if __name__ == "__main__":
     ## 5. Reconstruction
     angle = 360
     recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=-D/2, delta_t=delta_t)
-    save_img(recon, "reconstruction", type="clip")
+    save_img(recon, "reconstruction", type="min-max")
     
     ## 6. Slice Comparing
     theta = np.pi / 4 
-    r = 20
+    r = 35
     s_source = compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_recon  = compute_spatial_slice(recon,  bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_index = np.arange(0, len(s_source))
