@@ -261,7 +261,7 @@ if __name__ == "__main__":
     # Hyperparameter
     height, width = (128, 128)
     center = (30, 40)
-    A, B = (20, 15)
+    A, B = (40, 30)
     coefficient = 1
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
@@ -314,7 +314,7 @@ if __name__ == "__main__":
     Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, kernel_args=kernel_args)
     Q = Q[:, :kernel_args["num_detectors"]] # Truncate pad
     print(f"Q shape: {Q.shape}")
-    save_img(np.clip(Q, P.min(), P.max()), "filtered_projection", type="min-max")    
+    save_img(Q, "filtered_projection", type="min-max")    
     
     """
     ## 3, 4. Convolution Procjection
