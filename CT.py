@@ -11,12 +11,12 @@ def save_img(img, name, save_dir="./", type="clip"):
     elif type == "min-max":
         min = img.min()
         max = img.max()
-        img = (img - min) / max
+        img = (img - min) / (max - min)
     elif type == "abs":
         img = np.abs(img)
         min = img.min()
         max = img.max()
-        img = (img - min) / max
+        img = (img - min) / (max - min)
     else:
         raise ValueError("type must be one of 'clip', 'min-max', 'abs'.")
     img = (img * 255).astype(np.uint8)
@@ -265,7 +265,7 @@ if __name__ == "__main__":
     coefficient = 1
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
-    delta_t = 0.5
+    delta_t = 2
     delta_l = 0.5
     let_size = 5
     quarter_offset = False
@@ -314,7 +314,8 @@ if __name__ == "__main__":
     Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, kernel_args=kernel_args)
     Q = Q[:, :kernel_args["num_detectors"]] # Truncate pad
     print(f"Q shape: {Q.shape}")
-    save_img(Q, "filtered_projection", type="min-max")    
+    print(f"Q min: {Q.min()}, Q max: {Q.max()}")
+    save_img(Q, "filtered_projection", type="min-max")
     
     """
     ## 3, 4. Convolution Procjection
@@ -329,6 +330,7 @@ if __name__ == "__main__":
     ## 5. Reconstruction
     angle = 360
     recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=-D/2, delta_t=delta_t)
+    print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
     save_img(recon, "reconstruction", type="min-max")
     
     ## 6. Slice Comparing
