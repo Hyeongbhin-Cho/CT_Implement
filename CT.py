@@ -112,6 +112,7 @@ def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", kernel_args={}):
 
         H = delta_t * np.fft.fft(h_shifted)
         
+        """
         # Save figure
         plt.plot(n, h)
         plt.title("Spatial Domain")
@@ -129,7 +130,7 @@ def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", kernel_args={}):
         plt.xlabel("Frequency")
         plt.ylabel("Amplitude")
         plt.savefig("ramp_frequency_domain.png")
-        plt.clf()
+        plt.clf()"""
         
         """
         ## Calculating RMSE
@@ -145,16 +146,18 @@ def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", kernel_args={}):
         w_abs = np.abs(freq) # Jacobian
         H = np.where(w_abs <= cut_off, w_abs, 0)
         
+        """
         # Save figure
         freq_sorted = np.fft.fftshift(freq)
         H_sorted = np.fft.fftshift(H)
+        
         
         plt.plot(freq_sorted, H_sorted)
         plt.title("Ideal Ramp")
         plt.xlabel("Frequency")
         plt.ylabel("Amplitude")
         plt.savefig("ideal_ramp.png")
-        plt.clf()
+        plt.clf()"""
     
     elif kernel == "none":
         H = np.ones_like(S, dtype=np.float32)
@@ -212,7 +215,6 @@ def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False
                     
                     sum_q[i, j] += (1 - diff) * q_floor + diff * q_ceil
     
-
     return np.pi / len(thetas) * sum_q
 
 def compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l= 0.5):
@@ -260,15 +262,17 @@ if __name__ == "__main__":
     
     # Hyperparameter
     height, width = (128, 128)
-    center = (30, 40)
-    A, B = (40, 30)
+    center = (70, 70)
+    A, B = (50, 50)
     coefficient = 1
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
-    delta_t = 2
+    num_detectors = 512
+    delta_t = 1
     delta_l = 0.5
     let_size = 5
     quarter_offset = False
+    kernel_args = {}
     # Kernel
     kernel = "ramp"
     
@@ -281,7 +285,8 @@ if __name__ == "__main__":
     
     # W = 1 (1/pixel) -> delta = 1 / 2W = 0.5
     # Nyquist frequecy is 0.5 (1/pixel). But ,for better quality, it oversamples
-    ts =  np.arange(-D/2, D/2 + delta_t, delta_t)
+    ts =  np.arange(-num_detectors//2, (num_detectors + 1) // 2, 1) * delta_t
+    # ts = np.arange(-D/2 , D/2 + dleta_t, delta_t)
 
     # Grid: (x, y)
     R_x = np.arange(-width//2, (width + 1)//2 , 1)
@@ -310,11 +315,10 @@ if __name__ == "__main__":
     print(f"S shape: {S.shape}")
     
     ## 4. Filtered projection: Q_theta(t)
-    kernel_args = {"num_detectors" : P.shape[1]}
     Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, kernel_args=kernel_args)
-    Q = Q[:, :kernel_args["num_detectors"]] # Truncate pad
+    Q = Q[:, :num_detectors] # Truncate pad
     print(f"Q shape: {Q.shape}")
-    print(f"Q min: {Q.min()}, Q max: {Q.max()}")
+    # print(f"Q min: {Q.min()}, Q max: {Q.max()}")
     save_img(Q, "filtered_projection", type="min-max")
     
     """
@@ -328,9 +332,9 @@ if __name__ == "__main__":
     """    
     
     ## 5. Reconstruction
-    angle = 360
-    recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=-D/2, delta_t=delta_t)
-    print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
+    angle = 180
+    recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=ts[0], delta_t=delta_t)
+    # print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
     save_img(recon, "reconstruction", type="min-max")
     
     ## 6. Slice Comparing
