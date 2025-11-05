@@ -262,16 +262,16 @@ if __name__ == "__main__":
     
     # Hyperparameter
     height, width = (128, 128)
-    center = (70, 70)
-    A, B = (50, 50)
+    center = (20, -20)
+    A, B = (8, 8)
     coefficient = 1
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
-    num_detectors = 512
+    num_detectors = 100
     delta_t = 1
     delta_l = 0.5
     let_size = 5
-    quarter_offset = False
+    quarter_offset = True
     kernel_args = {}
     # Kernel
     kernel = "ramp"
@@ -332,10 +332,11 @@ if __name__ == "__main__":
     """    
     
     ## 5. Reconstruction
-    angle = 180
+    angle = 360
     recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=ts[0], delta_t=delta_t)
     # print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
     save_img(recon, "reconstruction", type="min-max")
+    np.save("recon.npy", recon)
     
     ## 6. Slice Comparing
     theta = np.pi / 4 
@@ -343,6 +344,7 @@ if __name__ == "__main__":
     s_source = compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_recon  = compute_spatial_slice(recon,  bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_index = np.arange(0, len(s_source))
+
     
     # Save figure
     plt.title("Compare Spatial Slice")
