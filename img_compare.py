@@ -18,5 +18,5 @@ if __name__ == "__main__":
     
     img_diff = (img_diff - min) / (max - min)
     
-    plt.imshow(img1)
+    plt.imshow(img_diff, cmap='gray')
     plt.show()

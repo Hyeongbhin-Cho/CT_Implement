@@ -66,6 +66,23 @@ def compute_projection(source, bias_x, bias_y, thetas, ts, D, delta_t=0.5, delta
             
     return P
 
+def compute_ellipse_analytic_projection(rho, A, B, center, thetas, ts, delta_t = 0.5 ,quarter_offset=False):
+    a, b = center
+    P = []
+    t_shift = delta_t / 4 if quarter_offset else 0    # Detector quater-offset 
+    ts = ts + t_shift
+    
+    for theta in thetas:
+        alpha = ((np.sin(theta) ** 2 / A ** 2) + (np.cos(theta) ** 2 / B ** 2))
+        beta = (- ts * np.sin(2 * theta) + 2 * a * np.sin(theta)) / A ** 2 + (ts * np.sin(2 * theta) - 2 * b * np.cos(theta)) / B ** 2
+        gamma = (ts ** 2 * np.cos(theta) ** 2 + a ** 2 - 2 * a * ts * np.cos(theta)) / A ** 2 + (ts ** 2 * np.sin(theta) ** 2 + b ** 2 - 2 * b * ts * np.sin(theta)) / B ** 2
+        
+        D = beta ** 2 - 4 * alpha * (gamma - 1)
+        P_ = np.where(D >= 0, rho * np.sqrt(D) / np.abs(alpha), 0)
+        P.append(P_)
+        
+    return np.stack(P, axis=0)
+
 def apply_detector_let(P, let_size):
     pre_pad = (let_size - 1) // 2
     post_pad = let_size // 2
@@ -191,7 +208,20 @@ def compute_convolution_projection(P, delta_t=0.5):
     Q = np.apply_along_axis(lambda x: np.convolve(x, h, mode="same"), axis=1, arr=P)
     
     return Q * delta_t
+
+def reconstruct_source(Q, x, y, thetas, ts, delta_t=0.5, quarter_offset=False):
+    H, W = x.shape
     
+    t_shift = delta_t / 4 if quarter_offset else 0
+    recon = np.zeros_like(x, dtype=np.float32)
+    for q, theta in zip(Q, thetas):
+        t = np.cos(theta) * x + np.sin(theta) * y
+
+        inter = np.interp(t.ravel(),ts+t_shift,q, left=0.0, right=0.0).reshape(H,W)
+        recon = recon + inter
+    
+    return np.pi / len(thetas) * recon
+"""
 def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False):
     H, W = x.shape
     len_t = Q.shape[1]
@@ -215,7 +245,7 @@ def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False
                     
                     sum_q[i, j] += (1 - diff) * q_floor + diff * q_ceil
     
-    return np.pi / len(thetas) * sum_q
+    return np.pi / len(thetas) * sum_q"""
 
 def compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l= 0.5):
     # Init
@@ -268,7 +298,7 @@ if __name__ == "__main__":
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
     num_detectors = 100
-    delta_t = 1
+    delta_t = 0.5
     delta_l = 0.5
     let_size = 5
     quarter_offset = True
@@ -302,7 +332,8 @@ if __name__ == "__main__":
     save_img(source, "source")
     
     ## 2.Projection of source: P_theta(t)
-    P = compute_projection(source, bias_x, bias_y, thetas, ts, D, delta_t=delta_t, delta_l=delta_l, quarter_offset=quarter_offset)
+    # P = compute_projection(source, bias_x, bias_y, thetas, ts, D, delta_t=delta_t, delta_l=delta_l, quarter_offset=quarter_offset)
+    P = compute_ellipse_analytic_projection(coefficient, A, B, center, thetas, ts, delta_t=delta_t, quarter_offset=quarter_offset)
     print(f"P shape: {P.shape}")
     save_img(P, "projection", type="min-max")
     
@@ -333,7 +364,7 @@ if __name__ == "__main__":
     
     ## 5. Reconstruction
     angle = 360
-    recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], t_min=ts[0], delta_t=delta_t)
+    recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], ts, delta_t=delta_t, quarter_offset=quarter_offset)
     # print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
     save_img(recon, "reconstruction", type="min-max")
     np.save("recon.npy", recon)
