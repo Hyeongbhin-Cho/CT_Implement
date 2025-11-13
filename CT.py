@@ -78,10 +78,18 @@ def compute_ellipse_analytic_projection(rho, A, B, center, thetas, ts, delta_t =
         gamma = (ts ** 2 * np.cos(theta) ** 2 + a ** 2 - 2 * a * ts * np.cos(theta)) / A ** 2 + (ts ** 2 * np.sin(theta) ** 2 + b ** 2 - 2 * b * ts * np.sin(theta)) / B ** 2
         
         D = beta ** 2 - 4 * alpha * (gamma - 1)
-        P_ = np.where(D >= 0, rho * np.sqrt(D) / np.abs(alpha), 0)
+        D = np.where(D >=0, D, 0)
+        P_ = rho * np.sqrt(D) / np.abs(alpha)
         P.append(P_)
         
     return np.stack(P, axis=0)
+
+def apply_poisson_noise(P, N_in):
+    eps = 1e-7
+    N_out = N_in * np.exp(-P)
+    N_noise = np.random.poisson(lam=N_out) + eps
+    
+    return np.log(N_in / N_noise)
 
 def apply_detector_let(P, let_size):
     pre_pad = (let_size - 1) // 2
@@ -292,17 +300,18 @@ if __name__ == "__main__":
     
     # Hyperparameter
     height, width = (128, 128)
-    center = (20, -20)
-    A, B = (8, 8)
+    center = (0, 0)
+    A, B = (30, 30)
     coefficient = 1
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
-    num_detectors = 100
-    delta_t = 0.5
+    num_detectors = 512
+    delta_t = 1
     delta_l = 0.5
     let_size = 5
     quarter_offset = True
     kernel_args = {}
+    N_in = 10000000000000
     # Kernel
     kernel = "ramp"
     
@@ -334,12 +343,17 @@ if __name__ == "__main__":
     ## 2.Projection of source: P_theta(t)
     # P = compute_projection(source, bias_x, bias_y, thetas, ts, D, delta_t=delta_t, delta_l=delta_l, quarter_offset=quarter_offset)
     P = compute_ellipse_analytic_projection(coefficient, A, B, center, thetas, ts, delta_t=delta_t, quarter_offset=quarter_offset)
-    print(f"P shape: {P.shape}")
     save_img(P, "projection", type="min-max")
+    
+    # Apply poisson noise
+    P = apply_poisson_noise(P, N_in)
+    save_img(P, "projectin_poisson_noise", type="min-max")
     
     # Apply detector let
     P = apply_detector_let(P, let_size)
     save_img(P, "projection__detector_lets", type="min-max")
+    
+    print(f"P shape: {P.shape}")
     
     ## 3. Fourier slice: S_theta(w)
     S = compute_fourier_slice(P)
@@ -370,8 +384,8 @@ if __name__ == "__main__":
     np.save("recon.npy", recon)
     
     ## 6. Slice Comparing
-    theta = np.pi / 4 
-    r = 35
+    theta = -np.pi / 4 
+    r = 0
     s_source = compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_recon  = compute_spatial_slice(recon,  bias_x, bias_y, theta, r, D, delta_l=delta_l)
     s_index = np.arange(0, len(s_source))
