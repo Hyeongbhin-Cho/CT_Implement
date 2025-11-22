@@ -78,7 +78,7 @@ def compute_ellipse_analytic_projection(rho, A, B, center, thetas, ts, delta_t =
         gamma = (ts ** 2 * np.cos(theta) ** 2 + a ** 2 - 2 * a * ts * np.cos(theta)) / A ** 2 + (ts ** 2 * np.sin(theta) ** 2 + b ** 2 - 2 * b * ts * np.sin(theta)) / B ** 2
         
         D = beta ** 2 - 4 * alpha * (gamma - 1)
-        D = np.where(D >=0, D, 0)
+        D = np.where(D >= 0, D, 0)
         P_ = rho * np.sqrt(D) / np.abs(alpha)
         P.append(P_)
         
@@ -115,7 +115,7 @@ def compute_fourier_slice(P):
     
     return S
 
-def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", kernel_args={}):
+def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", window="none", kernel_args={}):
     # Init
     _, len_S = S.shape
     
@@ -190,8 +190,39 @@ def compute_filtered_projection(S, delta_t=0.5, kernel="ramp", kernel_args={}):
     else:
         raise ValueError("parameter 'kernel' should be one of 'ramp', 'rect', 'none'")
     
-    # Multiple kernel
-    S_ = S * H
+    W = None
+    if window == "none":
+        W = np.ones_like(H)
+        
+    elif window == "hanning":
+        n = np.arange(len_S)
+        w = 0.5 * (1 - np.cos(2 * np.pi * n / len_S))
+        W = np.fft.ifftshift(w).astype(np.complex128)
+    
+    elif window == "hamming":
+        n = np.arange(len_S)
+        w = 0.54 - 0.46 * np.cos(2 * np.pi * n / len_S)
+        W = np.fft.ifftshift(w).astype(np.complex128)
+    
+    else:
+        raise ValueError("parameter 'window' should be one of 'hanning', 'hamming', 'none'")
+    
+    """
+    # Save figure
+    freq = np.fft.fftfreq(len_S, d=delta_t)
+    freq_sorted = np.fft.fftshift(freq)
+    HW_sorted = np.fft.fftshift(H * W)
+    
+    
+    plt.plot(freq_sorted, HW_sorted)
+    plt.title("Apodization Filter")
+    plt.xlabel("Frequency")
+    plt.ylabel("Amplitude")
+    plt.savefig("apodization filter.png")
+    plt.clf()"""
+    
+    # Multiple kernel and window
+    S_ = S * H * W
     
     # Filtered projection
     Q = np.fft.ifft(S_, axis=1)
@@ -217,18 +248,33 @@ def compute_convolution_projection(P, delta_t=0.5):
     
     return Q * delta_t
 
-def reconstruct_source(Q, x, y, thetas, ts, delta_t=0.5, quarter_offset=False):
+def reconstruct_source(Q, x, y, thetas, ts, delta_t=0.5, quarter_offset=False, interp="sinc", sinc_factor=8):
+    
     H, W = x.shape
     
+    if interp == "sinc":
+        delta_t /= sinc_factor
+        N = len(ts) * sinc_factor
+        ts = (np.arange(N) - (N // 2)) * delta_t
+        
     t_shift = delta_t / 4 if quarter_offset else 0
+    ts += t_shift
+    
     recon = np.zeros_like(x, dtype=np.float32)
     for q, theta in zip(Q, thetas):
         t = np.cos(theta) * x + np.sin(theta) * y
-
-        inter = np.interp(t.ravel(),ts+t_shift,q, left=0.0, right=0.0).reshape(H,W)
-        recon = recon + inter
+        
+        if interp == "sinc":
+            q = apply_sinc_interpolation(q, sinc_factor)
+        
+        if interp == "nearest":
+            sample = apply_nearest_interpolation(t.ravel(), ts, q).reshape(H,W)
+        else:
+            sample = np.interp(t.ravel(), ts, q, left=0.0, right=0.0).reshape(H,W)
+        recon += sample
     
-    return np.pi / len(thetas) * recon
+    return np.pi / len(thetas) * recon 
+
 """
 def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False):
     H, W = x.shape
@@ -254,6 +300,33 @@ def reconstruct_source(Q, x, y, thetas, t_min, delta_t=0.5, quarter_offset=False
                     sum_q[i, j] += (1 - diff) * q_floor + diff * q_ceil
     
     return np.pi / len(thetas) * sum_q"""
+    
+def apply_sinc_interpolation(source, factor=8):
+    N = len(source)
+    
+    total_pad = factor * N - N
+    left_pad = total_pad // 2
+    right_pad = total_pad - left_pad
+    
+    S = np.fft.fft(source)
+    S_shifted = np.fft.fftshift(S)
+    S_padded = np.pad(S_shifted, (left_pad, right_pad), mode="constant", constant_values=0)
+    S_unshifted = np.fft.ifftshift(S_padded)
+    S_sinc = np.fft.ifft(S_unshifted) * factor
+    
+    return S_sinc.real
+
+def apply_nearest_interpolation(source, x, y):
+    x_min = x.min()
+    dx = x[1] - x[0]
+    
+    idx = np.round((source - x_min) / dx, 0).astype(np.int32)
+    valid_idx = (idx >= 0) & (idx < len(y))
+    
+    interp = np.zeros_like(source, dtype=y.dtype)
+    interp[valid_idx] = y[idx[valid_idx]]    
+        
+    return interp
 
 def compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l= 0.5):
     # Init
@@ -288,6 +361,16 @@ def compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l= 0.5):
             slice.append((1 - dy) * ((1 - dx) * p_bl + dx * p_br) + dy * ((1 - dx) * p_tl + dx * p_tr))
         
     return np.array(slice)
+
+def compute_snr(source, x, y, size):
+    roi = source[y:y+size, x:x+size]
+    
+    eps = 1e-7
+    mu = np.mean(roi)
+    sigma = np.std(roi)
+    
+    return mu / (sigma + eps)
+    
         
 if __name__ == "__main__":
     """Implement CT
@@ -302,18 +385,22 @@ if __name__ == "__main__":
     height, width = (128, 128)
     center = (0, 0)
     A, B = (30, 30)
-    coefficient = 1
+    coefficient = 0.01
     range_angle = (0, 2 * np.pi)
     num_thetas = 360
     num_detectors = 512
-    delta_t = 1
+    delta_t = 1.0
     delta_l = 0.5
     let_size = 5
     quarter_offset = True
     kernel_args = {}
-    N_in = 10000000000000
+    angle = 360
+    N_in = 1000
+    pixel_size = 1
+    interp = "linear"
     # Kernel
     kernel = "ramp"
+    window = "none"
     
     ## init
     # Diameter
@@ -324,12 +411,12 @@ if __name__ == "__main__":
     
     # W = 1 (1/pixel) -> delta = 1 / 2W = 0.5
     # Nyquist frequecy is 0.5 (1/pixel). But ,for better quality, it oversamples
-    ts =  np.arange(-num_detectors//2, (num_detectors + 1) // 2, 1) * delta_t
+    ts =  (np.arange(num_detectors) - (num_detectors // 2)) * delta_t
     # ts = np.arange(-D/2 , D/2 + dleta_t, delta_t)
 
     # Grid: (x, y)
-    R_x = np.arange(-width//2, (width + 1)//2 , 1)
-    R_y = np.arange(-height//2, (height + 1)//2, 1)
+    R_x = np.arange(width) - (width // 2)
+    R_y = np.arange(height) - (height // 2)
     x, y = np.meshgrid(R_x, R_y)
     bias_x = x[0, 0]
     bias_y = y[0, 0]
@@ -338,7 +425,7 @@ if __name__ == "__main__":
     
     ## 1.Source
     source = create_source(x, y, center, A, B, coefficient=coefficient)
-    save_img(source, "source")
+    save_img(source, "source", type="min-max")
     
     ## 2.Projection of source: P_theta(t)
     # P = compute_projection(source, bias_x, bias_y, thetas, ts, D, delta_t=delta_t, delta_l=delta_l, quarter_offset=quarter_offset)
@@ -360,7 +447,7 @@ if __name__ == "__main__":
     print(f"S shape: {S.shape}")
     
     ## 4. Filtered projection: Q_theta(t)
-    Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, kernel_args=kernel_args)
+    Q = compute_filtered_projection(S, delta_t=delta_t, kernel=kernel, window=window, kernel_args=kernel_args)
     Q = Q[:, :num_detectors] # Truncate pad
     print(f"Q shape: {Q.shape}")
     # print(f"Q min: {Q.min()}, Q max: {Q.max()}")
@@ -377,24 +464,40 @@ if __name__ == "__main__":
     """    
     
     ## 5. Reconstruction
-    angle = 360
-    recon = reconstruct_source(Q[:angle], x, y, thetas[:angle], ts, delta_t=delta_t, quarter_offset=quarter_offset)
+    num_pixels_x = int(width / pixel_size)
+    num_pixels_y = int(height / pixel_size)
+    R_recon_x = (np.arange(num_pixels_x) - (num_pixels_x / 2)) * pixel_size
+    R_recon_y = (np.arange(num_pixels_y) - (num_pixels_y / 2)) * pixel_size
+    recon_x, recon_y = np.meshgrid(R_recon_x, R_recon_y)
+    
+    recon = reconstruct_source(Q[:angle], recon_x, recon_y, thetas[:angle], ts, delta_t=delta_t, interp=interp, quarter_offset=quarter_offset)
     # print(f"Recon min: {recon.min()}, Recon max: {recon.max()}")
     save_img(recon, "reconstruction", type="min-max")
     np.save("recon.npy", recon)
     
     ## 6. Slice Comparing
-    theta = -np.pi / 4 
+    theta = 0
     r = 0
     s_source = compute_spatial_slice(source, bias_x, bias_y, theta, r, D, delta_l=delta_l)
-    s_recon  = compute_spatial_slice(recon,  bias_x, bias_y, theta, r, D, delta_l=delta_l)
-    s_index = np.arange(0, len(s_source))
-
+    s_recon = compute_spatial_slice(recon,  bias_x, bias_y, theta, r, D, delta_l=delta_l)
+    s_index = np.arange(len(s_source))
+    """
+    source = create_source(recon_x, recon_y, center, A, B, coefficient=coefficient)
+    recon_H, recon_W = recon.shape
+    s_source = source[recon_H//2]
+    s_recon = recon[recon_H//2]
+    s_index = np.arange(recon_W)"""
     
     # Save figure
-    plt.title("Compare Spatial Slice")
+    plt.title("Comapre Spatial Slice")
     plt.plot(s_index, s_source, label='Source')
     plt.plot(s_index, s_recon,  label='Recon')
     plt.legend()
     plt.savefig("compare_spatial_slice.png")
     plt.clf() # Reset plt
+    
+    ## 7. Compute SNR
+    """
+    size = 20
+    snr = compute_snr(recon, recon_H//2-size//2, recon_W//2-size//2, size)
+    print(f"SNR: {snr:.4f}")"""
